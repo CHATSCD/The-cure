@@ -36,12 +36,22 @@
       </div>
     </div>
 
+    <!-- PWA install banner -->
+    <div id="installBanner" class="alert alert-success d-none mb-3">
+      <i class="bi bi-phone me-2"></i>
+      <strong>Add to your home screen</strong> for instant access and notifications.
+      <button class="btn btn-sm btn-success ms-2" id="installBtn">
+        <i class="bi bi-download me-1"></i>Install App
+      </button>
+      <button class="btn btn-sm btn-link ms-1 text-success" onclick="document.getElementById('installBanner').classList.add('d-none')">Later</button>
+    </div>
+
     <!-- Notification permission banner -->
     <div id="notifBanner" class="alert alert-info d-none mb-3">
       <i class="bi bi-bell me-2"></i>
-      Enable browser notifications to receive alerts even when you switch tabs.
-      <button class="btn btn-sm btn-outline-primary ms-2" onclick="requestNotifPermission()">
-        Enable Notifications
+      Enable notifications to get alerts even when this tab is closed.
+      <button class="btn btn-sm btn-outline-primary ms-2" id="enablePushBtn">
+        <i class="bi bi-bell me-1"></i>Enable
       </button>
       <button class="btn btn-sm btn-link ms-1" onclick="dismissNotifBanner()">Dismiss</button>
     </div>
@@ -155,8 +165,37 @@
 
 {% block scripts %}
 <script>
+const VAPID_PUBLIC_KEY = {{ vapid_public_key | tojson }};
 let _pendingReminder = null;
 const confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'));
+
+// ── PWA install prompt ────────────────────────────────────────────────────────
+let _deferredInstall = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  _deferredInstall = e;
+  document.getElementById('installBanner').classList.remove('d-none');
+});
+document.getElementById('installBtn').addEventListener('click', async () => {
+  if (!_deferredInstall) return;
+  _deferredInstall.prompt();
+  const { outcome } = await _deferredInstall.userChoice;
+  _deferredInstall = null;
+  document.getElementById('installBanner').classList.add('d-none');
+});
+
+// ── Auto-select from /remind/<id> URL ────────────────────────────────────────
+const AUTO_PATIENT = {{ auto_patient_id | default(0) | tojson }};
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (AUTO_PATIENT) {
+    const sel = document.getElementById('patientSelect');
+    if (sel) {
+      sel.value = AUTO_PATIENT;
+      loadReminders();
+    }
+  }
+});
 
 function loadReminders() {
   const patientId = document.getElementById('patientSelect').value;
@@ -166,11 +205,9 @@ function loadReminders() {
   document.getElementById('howItWorks').classList.add('d-none');
   fetchReminders(patientId);
 
-  // Poll every 30 s
   if (window._pollInterval) clearInterval(window._pollInterval);
   window._pollInterval = setInterval(() => fetchReminders(patientId), 30000);
 
-  // Notification permission prompt
   if ('Notification' in window && Notification.permission === 'default') {
     document.getElementById('notifBanner').classList.remove('d-none');
   }
@@ -307,10 +344,47 @@ function submitConfirmation() {
   });
 }
 
+// ── Push subscription ─────────────────────────────────────────────────────────
+document.getElementById('enablePushBtn').addEventListener('click', async () => {
+  const patientId = document.getElementById('patientSelect').value;
+  if (!patientId) { alert('Select your name first.'); return; }
+
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') return;
+
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+    const j = sub.toJSON();
+    await fetch('/api/push-subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        patient_id: parseInt(patientId),
+        endpoint:   j.endpoint,
+        p256dh:     j.keys.p256dh,
+        auth:       j.keys.auth,
+      }),
+    });
+    dismissNotifBanner();
+    alert('Push notifications enabled! You will be notified even when this tab is closed.');
+  } catch(e) {
+    console.error('Push subscribe failed:', e);
+  }
+});
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw     = atob(base64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
 function requestNotifPermission() {
-  Notification.requestPermission().then(p => {
-    if (p === 'granted') dismissNotifBanner();
-  });
+  document.getElementById('enablePushBtn').click();
 }
 function dismissNotifBanner() {
   document.getElementById('notifBanner').classList.add('d-none');

@@ -22,20 +22,45 @@ ADMIN_PASSWORD = "TheCure@2024"
 # ────────────────────────────────────────────────────────────────────────────
 
 IS_VERCEL    = bool(os.environ.get("VERCEL"))
-DATABASE_URL = os.environ.get("DATABASE_URL")          # set this in Vercel env vars
+DATABASE_URL = os.environ.get("DATABASE_URL")
 USE_POSTGRES = bool(DATABASE_URL)
 
-SQLITE_PATH = "/tmp/medication_tracker.db" if IS_VERCEL else os.path.join(
+APP_URL      = os.environ.get("APP_URL", "https://the-cure.vercel.app")
+
+SQLITE_PATH  = "/tmp/medication_tracker.db" if IS_VERCEL else os.path.join(
     os.path.dirname(__file__), "medication_tracker.db"
 )
 
-# Table names — med_ prefix in Supabase to avoid conflicts with existing tables
+# ── Twilio SMS ────────────────────────────────────────────────────────────────
+TWILIO_SID   = os.environ.get("TWILIO_ACCOUNT_SID")
+TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
+TWILIO_FROM  = os.environ.get("TWILIO_PHONE_NUMBER")   # e.g. +15005550006
+SMS_ENABLED  = all([TWILIO_SID, TWILIO_TOKEN, TWILIO_FROM])
+
+# ── Web Push VAPID ────────────────────────────────────────────────────────────
+# Override these env vars in Vercel with your own generated keys.
+VAPID_PRIVATE_KEY = os.environ.get(
+    "VAPID_PRIVATE_KEY",
+    "-----BEGIN PRIVATE KEY-----\n"
+    "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgd8nLLngLNfcJUNBq\n"
+    "jVbcoVX7po8ZiEq/CF2GqCwdaM2hRANCAARjq0JFa0aInS1drC9fh6VVhv9gNZLC\n"
+    "9ZsO0SvH+eoT+6SOdE+448aAPV1/BdB5eUZOwQnz/s8/oTGzuY2im2cN\n"
+    "-----END PRIVATE KEY-----",
+)
+VAPID_PUBLIC_KEY = os.environ.get(
+    "VAPID_PUBLIC_KEY",
+    "BGOrQkVrRoidLV2sL1-HpVWG_2A1ksL1mw7RK8f56hP7pI50T7jjxoA9XX8F0Hl5Rk7BCfP-zz-hMbO5jaKbZw0",
+)
+VAPID_CLAIMS = {"sub": f"mailto:admin@the-cure.app"}
+
+# ── Table names ───────────────────────────────────────────────────────────────
 if USE_POSTGRES:
     T_PATIENTS    = "med_patients"
     T_MEDICATIONS = "med_medications"
     T_SCHEDULES   = "med_schedules"
     T_REMINDERS   = "med_reminders"
     T_LOGS        = "med_logs"
+    T_PUSH_SUBS   = "med_push_subscriptions"
     DATE_NOW      = "CURRENT_DATE"
     MINUS_4H      = "NOW() - INTERVAL '4 hours'"
 else:
@@ -44,19 +69,17 @@ else:
     T_SCHEDULES   = "schedules"
     T_REMINDERS   = "reminders"
     T_LOGS        = "logs"
+    T_PUSH_SUBS   = "push_subscriptions"
     DATE_NOW      = "date('now')"
     MINUS_4H      = "datetime('now', '-4 hours')"
 
 
-# ── Database abstraction ──────────────────────────────────────────────────────
+# ── DB abstraction ────────────────────────────────────────────────────────────
 
 class _DBContext:
-    """Thin wrapper that makes psycopg2 behave like sqlite3 for this app."""
-
     def __init__(self):
         if USE_POSTGRES:
-            import psycopg2
-            import psycopg2.extras
+            import psycopg2, psycopg2.extras
             self._conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
             self._pg = True
         else:
@@ -70,13 +93,10 @@ class _DBContext:
             cur = self._conn.cursor()
             cur.execute(sql, params)
             return cur
-        else:
-            return self._conn.execute(sql.replace("%s", "?"), params)
+        return self._conn.execute(sql.replace("%s", "?"), params)
 
     def executescript(self, sql):
-        if self._pg:
-            pass  # Postgres tables managed via Supabase migration
-        else:
+        if not self._pg:
             self._conn.executescript(sql)
 
     def commit(self):
@@ -88,7 +108,7 @@ class _DBContext:
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, *_):
         if exc_type:
             if self._pg:
                 self._conn.rollback()
@@ -102,23 +122,21 @@ def get_db():
     return _DBContext()
 
 
-def _days(row_val):
-    """Return days list whether stored as JSON string (SQLite) or list (Postgres JSONB)."""
-    if isinstance(row_val, list):
-        return row_val
-    return json.loads(row_val)
+def _days(val):
+    return val if isinstance(val, list) else json.loads(val)
 
 
-# ── DB init (SQLite only) ─────────────────────────────────────────────────────
+# ── SQLite schema (Postgres managed via Supabase migrations) ──────────────────
 
 def init_db():
     if USE_POSTGRES:
-        return  # Schema managed via Supabase migration
+        return
     with get_db() as db:
         db.executescript("""
             CREATE TABLE IF NOT EXISTS patients (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 name       TEXT NOT NULL,
+                phone      TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             CREATE TABLE IF NOT EXISTS medications (
@@ -157,13 +175,101 @@ def init_db():
                 notes         TEXT,
                 confirmed_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                patient_id INTEGER NOT NULL REFERENCES patients(id),
+                endpoint   TEXT NOT NULL,
+                p256dh     TEXT NOT NULL,
+                auth       TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(patient_id, endpoint)
+            );
         """)
+        # Add phone column to existing DBs that were created before this migration
+        try:
+            db._conn.execute("ALTER TABLE patients ADD COLUMN phone TEXT")
+            db._conn.commit()
+        except Exception:
+            pass
 
 
 init_db()
 
 
-# ── Scheduler job ─────────────────────────────────────────────────────────────
+# ── Notification helpers ──────────────────────────────────────────────────────
+
+def send_sms(to_phone, patient_id, med_name, dosage=""):
+    if not SMS_ENABLED or not to_phone:
+        return
+    try:
+        from twilio.rest import Client
+        client   = Client(TWILIO_SID, TWILIO_TOKEN)
+        dose_str = f" ({dosage})" if dosage else ""
+        body = (
+            f"\U0001f48a Medication Reminder\n"
+            f"{med_name}{dose_str}\n"
+            f"Confirm here: {APP_URL}/remind/{patient_id}"
+        )
+        client.messages.create(body=body, from_=TWILIO_FROM, to=to_phone)
+    except Exception as e:
+        app.logger.error(f"SMS failed to {to_phone}: {e}")
+
+
+def send_push_notifications(patient_id, med_name, dosage=""):
+    """Send Web Push to all subscriptions for a patient."""
+    try:
+        from pywebpush import webpush, WebPushException
+    except ImportError:
+        return  # pywebpush not installed — skip silently
+
+    db   = get_db()
+    subs = db.execute(
+        f"SELECT * FROM {T_PUSH_SUBS} WHERE patient_id = %s", (patient_id,)
+    ).fetchall()
+    db.close()
+
+    dose_str = f" ({dosage})" if dosage else ""
+    payload  = json.dumps({
+        "title": "\U0001f48a Medication Reminder",
+        "body":  f"Time to take {med_name}{dose_str}. Tap to confirm.",
+        "url":   f"{APP_URL}/remind/{patient_id}",
+        "tag":   f"med-{patient_id}",
+    })
+
+    stale = []
+    for sub in subs:
+        try:
+            webpush(
+                subscription_info={
+                    "endpoint": sub["endpoint"],
+                    "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]},
+                },
+                data=payload,
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims=VAPID_CLAIMS,
+            )
+        except Exception:
+            stale.append(sub["endpoint"])
+
+    if stale:
+        with get_db() as db:
+            for ep in stale:
+                db.execute(f"DELETE FROM {T_PUSH_SUBS} WHERE endpoint = %s", (ep,))
+
+
+def notify_patient(patient_id, med_name, dosage=""):
+    """Fire both SMS and push for a reminder."""
+    db      = get_db()
+    patient = db.execute(
+        f"SELECT phone FROM {T_PATIENTS} WHERE id = %s", (patient_id,)
+    ).fetchone()
+    db.close()
+    if patient:
+        send_sms(patient["phone"], patient_id, med_name, dosage)
+    send_push_notifications(patient_id, med_name, dosage)
+
+
+# ── Scheduler ─────────────────────────────────────────────────────────────────
 
 def check_and_create_reminders():
     now          = datetime.now()
@@ -173,19 +279,20 @@ def check_and_create_reminders():
 
     with get_db() as db:
         rows = db.execute(
-            f"SELECT * FROM {T_SCHEDULES} WHERE active = %s AND reminder_time = %s",
+            f"SELECT s.*, m.name as med_name, m.dosage FROM {T_SCHEDULES} s "
+            f"JOIN {T_MEDICATIONS} m ON s.medication_id = m.id "
+            f"WHERE s.active = %s AND s.reminder_time = %s",
             (True if USE_POSTGRES else 1, current_time),
         ).fetchall()
 
+        created = []
         for s in rows:
             if current_day not in _days(s["days_of_week"]):
                 continue
-
             existing = db.execute(
                 f"SELECT id FROM {T_REMINDERS} WHERE schedule_id = %s AND DATE(scheduled_for) = %s",
                 (s["id"], today_str),
             ).fetchone()
-
             if not existing:
                 db.execute(
                     f"""INSERT INTO {T_REMINDERS}
@@ -193,15 +300,17 @@ def check_and_create_reminders():
                         VALUES (%s, %s, %s, %s, 'pending')""",
                     (s["id"], s["patient_id"], s["medication_id"], now.isoformat()),
                 )
+                created.append((s["patient_id"], s["med_name"], s["dosage"] or ""))
 
         db.execute(
-            f"""UPDATE {T_REMINDERS} SET status = 'missed'
-                WHERE status = 'pending'
-                AND scheduled_for < {MINUS_4H}"""
+            f"UPDATE {T_REMINDERS} SET status = 'missed' "
+            f"WHERE status = 'pending' AND scheduled_for < {MINUS_4H}"
         )
 
+    for patient_id, med_name, dosage in created:
+        notify_patient(patient_id, med_name, dosage)
 
-# Only run the background scheduler when running locally
+
 if not IS_VERCEL:
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
@@ -225,14 +334,26 @@ def login_required(f):
     return decorated
 
 
-# ── Patient-facing routes ─────────────────────────────────────────────────────
+# ── Patient-facing routes ──────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
     db       = get_db()
     patients = db.execute(f"SELECT * FROM {T_PATIENTS} ORDER BY name").fetchall()
     db.close()
-    return render_template("index.html", patients=patients)
+    return render_template("index.html", patients=patients,
+                           vapid_public_key=VAPID_PUBLIC_KEY)
+
+
+@app.route("/remind/<int:patient_id>")
+def remind_direct(patient_id):
+    """Direct link used in SMS — opens app with patient pre-selected."""
+    db       = get_db()
+    patients = db.execute(f"SELECT * FROM {T_PATIENTS} ORDER BY name").fetchall()
+    db.close()
+    return render_template("index.html", patients=patients,
+                           auto_patient_id=patient_id,
+                           vapid_public_key=VAPID_PUBLIC_KEY)
 
 
 @app.route("/api/reminders/<int:patient_id>")
@@ -292,21 +413,55 @@ def api_confirm():
     return jsonify({"success": True, "message": "Medication logged successfully!"})
 
 
-# ── Admin routes ──────────────────────────────────────────────────────────────
+@app.route("/api/push-subscribe", methods=["POST"])
+def api_push_subscribe():
+    data       = request.get_json(silent=True) or {}
+    patient_id = data.get("patient_id")
+    endpoint   = data.get("endpoint")
+    p256dh     = data.get("p256dh")
+    auth       = data.get("auth")
+
+    if not all([patient_id, endpoint, p256dh, auth]):
+        return jsonify({"error": "Missing subscription data"}), 400
+
+    try:
+        with get_db() as db:
+            if USE_POSTGRES:
+                db.execute(
+                    f"""INSERT INTO {T_PUSH_SUBS} (patient_id, endpoint, p256dh, auth)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (patient_id, endpoint) DO NOTHING""",
+                    (patient_id, endpoint, p256dh, auth),
+                )
+            else:
+                db.execute(
+                    f"""INSERT OR IGNORE INTO {T_PUSH_SUBS}
+                        (patient_id, endpoint, p256dh, auth) VALUES (%s, %s, %s, %s)""",
+                    (patient_id, endpoint, p256dh, auth),
+                )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({"success": True})
+
+
+@app.route("/api/vapid-public-key")
+def api_vapid_public_key():
+    return jsonify({"key": VAPID_PUBLIC_KEY})
+
+
+# ── Admin routes ───────────────────────────────────────────────────────────────
 
 @app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
     if session.get("admin_logged_in"):
         return redirect(url_for("admin_dashboard"))
-
     if request.method == "POST":
-        username = request.form.get("username", "")
-        password = request.form.get("password", "")
-        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+        if (request.form.get("username") == ADMIN_USERNAME
+                and request.form.get("password") == ADMIN_PASSWORD):
             session["admin_logged_in"] = True
             return redirect(url_for("admin_dashboard"))
         flash("Invalid username or password.", "danger")
-
     return render_template("admin_login.html")
 
 
@@ -342,6 +497,7 @@ def admin_dashboard():
         "admin_dashboard.html",
         stats=stats, recent_logs=recent_logs,
         patients=patients, medications=medications,
+        sms_enabled=SMS_ENABLED,
     )
 
 
@@ -352,15 +508,24 @@ def admin_patients():
         if request.method == "POST":
             action = request.form.get("action")
             if action == "add":
-                name = request.form.get("name", "").strip()
+                name  = request.form.get("name", "").strip()
+                phone = request.form.get("phone", "").strip() or None
                 if name:
-                    db.execute(f"INSERT INTO {T_PATIENTS} (name) VALUES (%s)", (name,))
+                    db.execute(
+                        f"INSERT INTO {T_PATIENTS} (name, phone) VALUES (%s, %s)",
+                        (name, phone),
+                    )
                     flash(f'Patient "{name}" added.', "success")
             elif action == "delete":
                 pid = request.form.get("patient_id")
                 db.execute(f"DELETE FROM {T_SCHEDULES} WHERE patient_id = %s", (pid,))
                 db.execute(f"DELETE FROM {T_PATIENTS} WHERE id = %s", (pid,))
                 flash("Patient removed.", "success")
+            elif action == "update_phone":
+                pid   = request.form.get("patient_id")
+                phone = request.form.get("phone", "").strip() or None
+                db.execute(f"UPDATE {T_PATIENTS} SET phone = %s WHERE id = %s", (phone, pid))
+                flash("Phone number updated.", "success")
 
     db       = get_db()
     patients = db.execute(
@@ -371,7 +536,7 @@ def admin_patients():
         (True if USE_POSTGRES else 1,),
     ).fetchall()
     db.close()
-    return render_template("admin_patients.html", patients=patients)
+    return render_template("admin_patients.html", patients=patients, sms_enabled=SMS_ENABLED)
 
 
 @app.route("/admin/medications", methods=["GET", "POST"])
@@ -488,23 +653,30 @@ def api_send_reminder():
     if not patient_id or not medication_id:
         return jsonify({"error": "Patient and medication are required"}), 400
 
+    db  = get_db()
+    med = db.execute(
+        f"SELECT name, dosage FROM {T_MEDICATIONS} WHERE id = %s", (medication_id,)
+    ).fetchone()
+    existing = db.execute(
+        f"""SELECT id FROM {T_REMINDERS}
+            WHERE patient_id = %s AND medication_id = %s
+            AND status = 'pending' AND DATE(scheduled_for) = {DATE_NOW}""",
+        (patient_id, medication_id),
+    ).fetchone()
+    db.close()
+
+    if existing:
+        return jsonify({"success": True, "message": "A pending reminder already exists for today."})
+
     with get_db() as db:
-        existing = db.execute(
-            f"""SELECT id FROM {T_REMINDERS}
-                WHERE patient_id = %s AND medication_id = %s
-                AND status = 'pending'
-                AND DATE(scheduled_for) = {DATE_NOW}""",
-            (patient_id, medication_id),
-        ).fetchone()
-
-        if existing:
-            return jsonify({"success": True, "message": "A pending reminder already exists for today."})
-
         db.execute(
             f"""INSERT INTO {T_REMINDERS} (patient_id, medication_id, scheduled_for, status)
                 VALUES (%s, %s, %s, 'pending')""",
             (patient_id, medication_id, datetime.now().isoformat()),
         )
+
+    if med:
+        notify_patient(int(patient_id), med["name"], med["dosage"] or "")
 
     return jsonify({"success": True, "message": "Manual reminder sent!"})
 

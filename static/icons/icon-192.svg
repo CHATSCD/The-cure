@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="40" fill="#0d6efd"/>
+  <!-- Pill body -->
+  <rect x="36" y="76" width="120" height="40" rx="20" fill="white"/>
+  <!-- Left half tint -->
+  <path d="M56 76 Q36 76 36 96 Q36 116 56 116 L96 116 L96 76 Z" fill="#cfe2ff"/>
+  <!-- Center divider -->
+  <rect x="94" y="72" width="4" height="48" rx="2" fill="#0d6efd" opacity="0.3"/>
+</svg>

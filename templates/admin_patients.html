@@ -20,6 +20,15 @@
             <label class="form-label">Full Name</label>
             <input type="text" name="name" class="form-control" placeholder="Patient name" required />
           </div>
+          <div class="mb-3">
+            <label class="form-label">
+              <i class="bi bi-phone me-1"></i>Phone for SMS
+              {% if not sms_enabled %}<span class="badge bg-secondary ms-1">Twilio not configured</span>{% endif %}
+            </label>
+            <input type="tel" name="phone" class="form-control"
+                   placeholder="+1 555 000 0000" />
+            <div class="form-text">Include country code (e.g. +1 for US)</div>
+          </div>
           <button type="submit" class="btn btn-primary w-100">
             <i class="bi bi-plus-circle me-1"></i>Add Patient
           </button>
@@ -40,9 +49,9 @@
           <table class="table table-hover mb-0">
             <thead class="table-light">
               <tr>
-                <th>#</th>
                 <th>Name</th>
-                <th>Active Schedules</th>
+                <th>Phone (SMS)</th>
+                <th>Schedules</th>
                 <th>Added</th>
                 <th></th>
               </tr>
@@ -50,14 +59,23 @@
             <tbody>
               {% for p in patients %}
               <tr>
-                <td class="text-muted">{{ p.id }}</td>
                 <td class="fw-semibold">{{ p.name }}</td>
                 <td>
-                  <span class="badge bg-info">{{ p.schedule_count }}</span>
+                  <form method="POST" class="d-flex gap-1">
+                    <input type="hidden" name="action" value="update_phone" />
+                    <input type="hidden" name="patient_id" value="{{ p.id }}" />
+                    <input type="tel" name="phone" class="form-control form-control-sm"
+                           value="{{ p.phone or '' }}" placeholder="+1 555 000 0000"
+                           style="min-width:140px" />
+                    <button type="submit" class="btn btn-sm btn-outline-secondary" title="Save phone">
+                      <i class="bi bi-check2"></i>
+                    </button>
+                  </form>
                 </td>
+                <td><span class="badge bg-info">{{ p.schedule_count }}</span></td>
                 <td class="text-muted small">{{ p.created_at[:10] }}</td>
                 <td>
-                  <form method="POST" onsubmit="return confirm('Remove patient {{ p.name }}? This also removes their schedules.')">
+                  <form method="POST" onsubmit="return confirm('Remove {{ p.name }}? This also removes their schedules.')">
                     <input type="hidden" name="action" value="delete" />
                     <input type="hidden" name="patient_id" value="{{ p.id }}" />
                     <button type="submit" class="btn btn-sm btn-outline-danger">
