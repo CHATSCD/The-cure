@@ -8,7 +8,6 @@ from flask import (
     Flask, render_template, request, redirect,
     url_for, session, jsonify, flash
 )
-from apscheduler.schedulers.background import BackgroundScheduler
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-me-in-production-abc123")
@@ -23,7 +22,9 @@ ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "TheCure@2024"
 # ────────────────────────────────────────────────────────────────────────────
 
-DATABASE = os.path.join(os.path.dirname(__file__), "medication_tracker.db")
+# Vercel's filesystem is read-only except /tmp
+IS_VERCEL = bool(os.environ.get("VERCEL"))
+DATABASE = "/tmp/medication_tracker.db" if IS_VERCEL else os.path.join(os.path.dirname(__file__), "medication_tracker.db")
 
 
 # ── Database helpers ─────────────────────────────────────────────────────────
@@ -86,6 +87,10 @@ def init_db():
         """)
 
 
+# Initialise tables at import time so Vercel's WSGI runner picks it up
+init_db()
+
+
 # ── Scheduler job ────────────────────────────────────────────────────────────
 
 def check_and_create_reminders():
@@ -125,6 +130,19 @@ def check_and_create_reminders():
         )
 
 
+# Only start the background scheduler when running locally (not on Vercel serverless)
+if not IS_VERCEL:
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+            _scheduler = BackgroundScheduler(daemon=True)
+            _scheduler.add_job(check_and_create_reminders, "interval", minutes=1)
+            _scheduler.start()
+            atexit.register(lambda: _scheduler.shutdown(wait=False))
+    except Exception:
+        pass  # APScheduler unavailable — reminders triggered manually
+
+
 # ── Auth decorator ───────────────────────────────────────────────────────────
 
 def login_required(f):
@@ -147,6 +165,13 @@ def index():
 
 @app.route("/api/reminders/<int:patient_id>")
 def api_reminders(patient_id):
+    # On Vercel, also run the schedule check inline (no background scheduler)
+    if IS_VERCEL:
+        try:
+            check_and_create_reminders()
+        except Exception:
+            pass
+
     db = get_db()
     rows = db.execute(
         """SELECT r.id, r.scheduled_for, r.status,
@@ -423,14 +448,5 @@ def api_today_reminders():
     return jsonify([dict(r) for r in rows])
 
 
-# ── Bootstrap ────────────────────────────────────────────────────────────────
-
-if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
-    _scheduler = BackgroundScheduler(daemon=True)
-    _scheduler.add_job(check_and_create_reminders, "interval", minutes=1)
-    _scheduler.start()
-    atexit.register(lambda: _scheduler.shutdown(wait=False))
-
 if __name__ == "__main__":
-    init_db()
     app.run(debug=True, port=5000, use_reloader=True)
