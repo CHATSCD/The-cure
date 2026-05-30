@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Patients{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2 class="mb-0"><i class="bi bi-people-fill me-2 text-primary"></i>Patients</h2>
+</div>
+
+<div class="row g-4">
+  <!-- Add Patient -->
+  <div class="col-md-4">
+    <div class="card shadow-sm">
+      <div class="card-header fw-semibold bg-primary text-white">
+        <i class="bi bi-person-plus me-2"></i>Add Patient
+      </div>
+      <div class="card-body">
+        <form method="POST">
+          <input type="hidden" name="action" value="add" />
+          <div class="mb-3">
+            <label class="form-label">Full Name</label>
+            <input type="text" name="name" class="form-control" placeholder="Patient name" required />
+          </div>
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-plus-circle me-1"></i>Add Patient
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Patient List -->
+  <div class="col-md-8">
+    <div class="card shadow-sm">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-list-ul me-2"></i>Patient List ({{ patients|length }})
+      </div>
+      <div class="card-body p-0">
+        {% if patients %}
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>#</th>
+                <th>Name</th>
+                <th>Active Schedules</th>
+                <th>Added</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for p in patients %}
+              <tr>
+                <td class="text-muted">{{ p.id }}</td>
+                <td class="fw-semibold">{{ p.name }}</td>
+                <td>
+                  <span class="badge bg-info">{{ p.schedule_count }}</span>
+                </td>
+                <td class="text-muted small">{{ p.created_at[:10] }}</td>
+                <td>
+                  <form method="POST" onsubmit="return confirm('Remove patient {{ p.name }}? This also removes their schedules.')">
+                    <input type="hidden" name="action" value="delete" />
+                    <input type="hidden" name="patient_id" value="{{ p.id }}" />
+                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-center text-muted">No patients added yet.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

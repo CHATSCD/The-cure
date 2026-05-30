@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2 class="mb-0"><i class="bi bi-speedometer2 me-2 text-primary"></i>Dashboard</h2>
+  <span class="text-muted small">{{ now().strftime('%A, %B %d %Y') if now is defined else '' }}</span>
+</div>
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card text-center shadow-sm border-0 h-100">
+      <div class="card-body">
+        <i class="bi bi-people-fill fs-2 text-primary mb-2 d-block"></i>
+        <h2 class="fw-bold mb-0">{{ stats.patients }}</h2>
+        <small class="text-muted">Patients</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center shadow-sm border-0 h-100">
+      <div class="card-body">
+        <i class="bi bi-capsule-pill fs-2 text-info mb-2 d-block"></i>
+        <h2 class="fw-bold mb-0">{{ stats.medications }}</h2>
+        <small class="text-muted">Medications</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center shadow-sm border-0 h-100">
+      <div class="card-body">
+        <i class="bi bi-bell-fill fs-2 text-warning mb-2 d-block"></i>
+        <h2 class="fw-bold mb-0">{{ stats.pending }}</h2>
+        <small class="text-muted">Pending Reminders</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center shadow-sm border-0 h-100">
+      <div class="card-body">
+        <i class="bi bi-check-circle-fill fs-2 text-success mb-2 d-block"></i>
+        <h2 class="fw-bold mb-0">{{ stats.today_confirmed }}</h2>
+        <small class="text-muted">Confirmed Today</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+
+  <!-- Manual Reminder -->
+  <div class="col-lg-5">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-warning text-dark fw-semibold">
+        <i class="bi bi-send-fill me-2"></i>Send Manual Reminder
+      </div>
+      <div class="card-body">
+        <p class="text-muted small mb-3">
+          Instantly push a reminder to a patient's screen. They will see it the next time
+          they check or within 30 seconds if their page is open.
+        </p>
+        <div class="mb-3">
+          <label class="form-label">Patient</label>
+          <select id="mrPatient" class="form-select">
+            <option value="">— Select patient —</option>
+            {% for p in patients %}
+            <option value="{{ p.id }}">{{ p.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Medication</label>
+          <select id="mrMed" class="form-select">
+            <option value="">— Select medication —</option>
+            {% for m in medications %}
+            <option value="{{ m.id }}">{{ m.name }}{% if m.dosage %} ({{ m.dosage }}){% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div id="mrResult" class="alert d-none mb-3"></div>
+        <button class="btn btn-warning w-100 fw-semibold" onclick="sendManualReminder()">
+          <i class="bi bi-bell me-1"></i>Send Reminder Now
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Today's reminder status -->
+  <div class="col-lg-7">
+    <div class="card shadow-sm h-100">
+      <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-calendar-check me-2"></i>Today's Reminder Status</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadTodayStatus()">
+          <i class="bi bi-arrow-clockwise"></i>
+        </button>
+      </div>
+      <div class="card-body p-0">
+        <div id="todayStatus" class="p-3 text-center text-muted">
+          <button class="btn btn-outline-primary" onclick="loadTodayStatus()">
+            <i class="bi bi-eye me-1"></i>Load Status
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Recent Logs -->
+<div class="card shadow-sm mt-4">
+  <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-journal-check me-2"></i>Recent Confirmations</span>
+    <a href="{{ url_for('admin_logs') }}" class="btn btn-sm btn-outline-primary">View All</a>
+  </div>
+  <div class="card-body p-0">
+    {% if recent_logs %}
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Patient</th>
+            <th>Medication</th>
+            <th>Day Entered</th>
+            <th>Time Entered</th>
+            <th>Initials</th>
+            <th>Logged At</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in recent_logs %}
+          <tr>
+            <td>{{ log.patient_name }}</td>
+            <td>
+              {{ log.medication_name }}
+              {% if log.dosage %}<small class="text-muted">({{ log.dosage }})</small>{% endif %}
+            </td>
+            <td>{{ log.entered_day }}</td>
+            <td>{{ log.entered_time }}</td>
+            <td><span class="badge bg-primary">{{ log.initials }}</span></td>
+            <td class="text-muted small">{{ log.confirmed_at[:16].replace('T',' ') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="p-4 text-center text-muted">No confirmations yet.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function sendManualReminder() {
+  const patientId    = document.getElementById('mrPatient').value;
+  const medicationId = document.getElementById('mrMed').value;
+  const result       = document.getElementById('mrResult');
+
+  if (!patientId || !medicationId) {
+    result.className = 'alert alert-danger';
+    result.textContent = 'Please select both a patient and a medication.';
+    result.classList.remove('d-none');
+    return;
+  }
+
+  fetch('/admin/api/send-reminder', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ patient_id: parseInt(patientId), medication_id: parseInt(medicationId) }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    result.className = data.success ? 'alert alert-success' : 'alert alert-danger';
+    result.textContent = data.message || data.error;
+    result.classList.remove('d-none');
+  });
+}
+
+function loadTodayStatus() {
+  fetch('/admin/api/today-reminders')
+    .then(r => r.json())
+    .then(data => {
+      const container = document.getElementById('todayStatus');
+      if (!data.length) {
+        container.innerHTML = '<p class="text-muted mb-0">No reminders scheduled for today yet.</p>';
+        return;
+      }
+      const statusBadge = {
+        pending:   '<span class="badge bg-warning text-dark">Pending</span>',
+        confirmed: '<span class="badge bg-success">Confirmed</span>',
+        missed:    '<span class="badge bg-danger">Missed</span>',
+      };
+      let html = '<div class="table-responsive"><table class="table table-sm mb-0"><thead class="table-light"><tr><th>Patient</th><th>Medication</th><th>Scheduled</th><th>Status</th></tr></thead><tbody>';
+      data.forEach(r => {
+        const t = new Date(r.scheduled_for).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+        html += `<tr>
+          <td>${escHtml(r.patient_name)}</td>
+          <td>${escHtml(r.medication_name)}</td>
+          <td>${t}</td>
+          <td>${statusBadge[r.status] || r.status}</td>
+        </tr>`;
+      });
+      html += '</tbody></table></div>';
+      container.innerHTML = html;
+    });
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+{% endblock %}

@@ -1,0 +1,324 @@
+{% extends "base.html" %}
+{% block title %}Medication Reminders{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+
+    <!-- Patient selector -->
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        <h5 class="card-title mb-3">
+          <i class="bi bi-person-circle me-2 text-primary"></i>Who are you?
+        </h5>
+        {% if patients %}
+        <div class="row g-2 align-items-end">
+          <div class="col">
+            <select id="patientSelect" class="form-select form-select-lg">
+              <option value="">— Select your name —</option>
+              {% for p in patients %}
+              <option value="{{ p.id }}">{{ p.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-auto">
+            <button id="loadBtn" class="btn btn-primary btn-lg" onclick="loadReminders()">
+              <i class="bi bi-search me-1"></i>Check Reminders
+            </button>
+          </div>
+        </div>
+        {% else %}
+        <div class="alert alert-info mb-0">
+          <i class="bi bi-info-circle me-2"></i>
+          No patients have been set up yet. Please ask your administrator to add patients.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Notification permission banner -->
+    <div id="notifBanner" class="alert alert-info d-none mb-3">
+      <i class="bi bi-bell me-2"></i>
+      Enable browser notifications to receive alerts even when you switch tabs.
+      <button class="btn btn-sm btn-outline-primary ms-2" onclick="requestNotifPermission()">
+        Enable Notifications
+      </button>
+      <button class="btn btn-sm btn-link ms-1" onclick="dismissNotifBanner()">Dismiss</button>
+    </div>
+
+    <!-- Reminders area -->
+    <div id="reminderArea" class="d-none">
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <h4 class="mb-0">
+          <i class="bi bi-bell-fill text-warning me-2"></i>
+          Pending Reminders
+        </h4>
+        <span class="badge bg-secondary" id="reminderCount">0</span>
+      </div>
+      <div id="reminderList"></div>
+
+      <div id="noReminders" class="card text-center py-5 d-none">
+        <div class="card-body">
+          <i class="bi bi-check-circle-fill text-success fs-1 mb-3 d-block"></i>
+          <h5>All caught up!</h5>
+          <p class="text-muted mb-0">No pending medication reminders right now. Check back later.</p>
+        </div>
+      </div>
+
+      <p class="text-muted small mt-2">
+        <i class="bi bi-arrow-clockwise me-1"></i>
+        Auto-refreshes every 30 seconds.
+        <span id="lastRefresh"></span>
+      </p>
+    </div>
+
+    <!-- How it works -->
+    <div id="howItWorks" class="card border-0 bg-light mt-4">
+      <div class="card-body">
+        <h6 class="text-muted mb-3">How it works</h6>
+        <div class="row g-3 text-center">
+          <div class="col-4">
+            <i class="bi bi-person-check fs-3 text-primary mb-2 d-block"></i>
+            <small>Select your name above</small>
+          </div>
+          <div class="col-4">
+            <i class="bi bi-bell-fill fs-3 text-warning mb-2 d-block"></i>
+            <small>See your pending reminders</small>
+          </div>
+          <div class="col-4">
+            <i class="bi bi-journal-check fs-3 text-success mb-2 d-block"></i>
+            <small>Confirm you took your medication</small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Confirmation Modal -->
+<div class="modal fade" id="confirmModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title">
+          <i class="bi bi-capsule me-2"></i>Confirm Medication Taken
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-primary mb-3" id="modalMedInfo"></div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold">
+            <i class="bi bi-calendar3 me-1"></i>Day Taken <span class="text-danger">*</span>
+          </label>
+          <input type="date" id="enteredDay" class="form-control form-control-lg" required />
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold">
+            <i class="bi bi-clock me-1"></i>Time Taken <span class="text-danger">*</span>
+          </label>
+          <input type="time" id="enteredTime" class="form-control form-control-lg" required />
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold">
+            <i class="bi bi-person me-1"></i>Your Initials <span class="text-danger">*</span>
+          </label>
+          <input type="text" id="initials" class="form-control form-control-lg"
+                 placeholder="e.g. J.D." maxlength="6" style="text-transform:uppercase" required />
+          <div class="form-text">Enter your initials (up to 6 characters)</div>
+        </div>
+
+        <div class="mb-2">
+          <label class="form-label fw-semibold">
+            <i class="bi bi-chat-left-text me-1"></i>Notes (optional)
+          </label>
+          <textarea id="notes" class="form-control" rows="2"
+                    placeholder="Any notes about this dose…"></textarea>
+        </div>
+
+        <div id="confirmError" class="alert alert-danger d-none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-success btn-lg" onclick="submitConfirmation()">
+          <i class="bi bi-check2-circle me-1"></i>Confirm Taken
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _pendingReminder = null;
+const confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'));
+
+function loadReminders() {
+  const patientId = document.getElementById('patientSelect').value;
+  if (!patientId) { alert('Please select your name first.'); return; }
+
+  document.getElementById('reminderArea').classList.remove('d-none');
+  document.getElementById('howItWorks').classList.add('d-none');
+  fetchReminders(patientId);
+
+  // Poll every 30 s
+  if (window._pollInterval) clearInterval(window._pollInterval);
+  window._pollInterval = setInterval(() => fetchReminders(patientId), 30000);
+
+  // Notification permission prompt
+  if ('Notification' in window && Notification.permission === 'default') {
+    document.getElementById('notifBanner').classList.remove('d-none');
+  }
+}
+
+function fetchReminders(patientId) {
+  fetch(`/api/reminders/${patientId}`)
+    .then(r => r.json())
+    .then(data => renderReminders(data, patientId))
+    .catch(() => {});
+  document.getElementById('lastRefresh').textContent =
+    `Last checked: ${new Date().toLocaleTimeString()}`;
+}
+
+function renderReminders(reminders, patientId) {
+  const list  = document.getElementById('reminderList');
+  const none  = document.getElementById('noReminders');
+  const count = document.getElementById('reminderCount');
+
+  count.textContent = reminders.length;
+  list.innerHTML = '';
+
+  if (reminders.length === 0) {
+    none.classList.remove('d-none');
+    return;
+  }
+  none.classList.add('d-none');
+
+  reminders.forEach(r => {
+    const time = new Date(r.scheduled_for).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    list.innerHTML += `
+      <div class="card border-warning shadow-sm mb-3 reminder-card" id="reminder-${r.id}">
+        <div class="card-body d-flex align-items-start gap-3">
+          <div class="reminder-icon text-warning fs-1">
+            <i class="bi bi-bell-fill"></i>
+          </div>
+          <div class="flex-grow-1">
+            <h5 class="mb-1">${escHtml(r.medication_name)}</h5>
+            ${r.dosage ? `<p class="mb-1 text-muted"><i class="bi bi-capsule me-1"></i>${escHtml(r.dosage)}</p>` : ''}
+            ${r.instructions ? `<p class="mb-1 small text-secondary">${escHtml(r.instructions)}</p>` : ''}
+            <p class="mb-0 small text-muted">
+              <i class="bi bi-clock me-1"></i>Scheduled for ${time}
+            </p>
+          </div>
+          <div>
+            <button class="btn btn-success btn-lg"
+              onclick="openConfirm(${r.id}, ${patientId}, ${r.medication_id},
+                        '${escHtml(r.medication_name)}', '${escHtml(r.dosage || '')}')">
+              <i class="bi bi-check2-circle me-1"></i>Confirm
+            </button>
+          </div>
+        </div>
+      </div>`;
+  });
+
+  // Browser notification for new reminders
+  if (reminders.length > 0 && Notification.permission === 'granted') {
+    new Notification('Medication Reminder', {
+      body: `You have ${reminders.length} pending medication reminder(s).`,
+      icon: '/static/pill-icon.png',
+    });
+  }
+}
+
+function openConfirm(reminderId, patientId, medicationId, medName, dosage) {
+  _pendingReminder = { reminderId, patientId, medicationId };
+
+  document.getElementById('modalMedInfo').innerHTML =
+    `<strong><i class="bi bi-capsule me-1"></i>${escHtml(medName)}</strong>` +
+    (dosage ? ` &mdash; ${escHtml(dosage)}` : '');
+
+  // Pre-fill day/time to now
+  const now = new Date();
+  document.getElementById('enteredDay').value  = now.toISOString().slice(0, 10);
+  document.getElementById('enteredTime').value = now.toTimeString().slice(0, 5);
+  document.getElementById('initials').value = '';
+  document.getElementById('notes').value = '';
+  document.getElementById('confirmError').classList.add('d-none');
+
+  confirmModal.show();
+}
+
+function submitConfirmation() {
+  const day      = document.getElementById('enteredDay').value;
+  const time     = document.getElementById('enteredTime').value;
+  const initials = document.getElementById('initials').value.trim().toUpperCase();
+  const notes    = document.getElementById('notes').value.trim();
+  const errBox   = document.getElementById('confirmError');
+
+  if (!day || !time || !initials) {
+    errBox.textContent = 'Day, time, and initials are required.';
+    errBox.classList.remove('d-none');
+    return;
+  }
+
+  fetch('/api/confirm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      reminder_id:   _pendingReminder.reminderId,
+      patient_id:    _pendingReminder.patientId,
+      medication_id: _pendingReminder.medicationId,
+      entered_day:   day,
+      entered_time:  time,
+      initials,
+      notes,
+    }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.error) {
+      errBox.textContent = data.error;
+      errBox.classList.remove('d-none');
+      return;
+    }
+    confirmModal.hide();
+    const card = document.getElementById(`reminder-${_pendingReminder.reminderId}`);
+    if (card) {
+      card.classList.remove('border-warning');
+      card.classList.add('border-success', 'opacity-50');
+      card.innerHTML = `<div class="card-body text-success text-center py-3">
+        <i class="bi bi-check-circle-fill fs-4 me-2"></i>
+        <strong>Logged! Thank you.</strong>
+      </div>`;
+      setTimeout(() => card.remove(), 2000);
+    }
+    // Re-check count
+    const patientId = document.getElementById('patientSelect').value;
+    setTimeout(() => fetchReminders(patientId), 2100);
+  })
+  .catch(() => {
+    errBox.textContent = 'Network error. Please try again.';
+    errBox.classList.remove('d-none');
+  });
+}
+
+function requestNotifPermission() {
+  Notification.requestPermission().then(p => {
+    if (p === 'granted') dismissNotifBanner();
+  });
+}
+function dismissNotifBanner() {
+  document.getElementById('notifBanner').classList.add('d-none');
+}
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+{% endblock %}

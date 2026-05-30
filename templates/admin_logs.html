@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Medication Logs{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2 class="mb-0"><i class="bi bi-journal-check me-2 text-primary"></i>Medication Logs</h2>
+  <span class="badge bg-primary fs-6">{{ logs|length }} records</span>
+</div>
+
+<!-- Filters -->
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <form method="GET" class="row g-3 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label">Patient</label>
+        <select name="patient_id" class="form-select">
+          <option value="">All Patients</option>
+          {% for p in patients %}
+          <option value="{{ p.id }}" {{ 'selected' if selected_patient == p.id|string }}>
+            {{ p.name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">From Date</label>
+        <input type="date" name="date_from" class="form-control"
+               value="{{ date_from or '' }}" />
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">To Date</label>
+        <input type="date" name="date_to" class="form-control"
+               value="{{ date_to or '' }}" />
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary w-100">
+          <i class="bi bi-search me-1"></i>Filter
+        </button>
+      </div>
+    </form>
+    {% if selected_patient or date_from or date_to %}
+    <a href="{{ url_for('admin_logs') }}" class="btn btn-sm btn-outline-secondary mt-2">
+      <i class="bi bi-x-circle me-1"></i>Clear Filters
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Log Table -->
+<div class="card shadow-sm">
+  <div class="card-body p-0">
+    {% if logs %}
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle">
+        <thead class="table-dark">
+          <tr>
+            <th>#</th>
+            <th>Patient</th>
+            <th>Medication</th>
+            <th>Dosage</th>
+            <th>Day Entered</th>
+            <th>Time Entered</th>
+            <th>Initials</th>
+            <th>Notes</th>
+            <th>Logged At</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in logs %}
+          <tr>
+            <td class="text-muted small">{{ log.id }}</td>
+            <td class="fw-semibold">{{ log.patient_name }}</td>
+            <td>{{ log.medication_name }}</td>
+            <td class="text-muted small">{{ log.dosage or '—' }}</td>
+            <td>{{ log.entered_day }}</td>
+            <td>{{ log.entered_time }}</td>
+            <td>
+              <span class="badge bg-primary px-3 py-2 fs-6">{{ log.initials }}</span>
+            </td>
+            <td class="text-muted small">{{ log.notes or '—' }}</td>
+            <td class="text-muted small text-nowrap">
+              {{ log.confirmed_at[:16].replace('T', ' ') }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="p-5 text-center text-muted">
+      <i class="bi bi-journal-x fs-1 d-block mb-3"></i>
+      No medication logs found for the selected filters.
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}Reminder Schedules{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2 class="mb-0"><i class="bi bi-clock-fill me-2 text-primary"></i>Reminder Schedules</h2>
+</div>
+
+<div class="row g-4">
+  <!-- Add Schedule -->
+  <div class="col-md-4">
+    <div class="card shadow-sm">
+      <div class="card-header fw-semibold bg-success text-white">
+        <i class="bi bi-plus-circle me-2"></i>Create Schedule
+      </div>
+      <div class="card-body">
+        <form method="POST">
+          <input type="hidden" name="action" value="add" />
+          <div class="mb-3">
+            <label class="form-label">Patient <span class="text-danger">*</span></label>
+            <select name="patient_id" class="form-select" required>
+              <option value="">— Select patient —</option>
+              {% for p in patients %}
+              <option value="{{ p.id }}">{{ p.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Medication <span class="text-danger">*</span></label>
+            <select name="medication_id" class="form-select" required>
+              <option value="">— Select medication —</option>
+              {% for m in medications %}
+              <option value="{{ m.id }}">{{ m.name }}{% if m.dosage %} ({{ m.dosage }}){% endif %}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Reminder Time <span class="text-danger">*</span></label>
+            <input type="time" name="reminder_time" class="form-control" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Days of Week</label>
+            <div class="d-flex flex-wrap gap-2">
+              {% for day in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" name="days"
+                       value="{{ day }}" id="day{{ day }}" checked />
+                <label class="form-check-label" for="day{{ day }}">{{ day }}</label>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          <button type="submit" class="btn btn-success w-100">
+            <i class="bi bi-calendar-plus me-1"></i>Create Schedule
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Schedule List -->
+  <div class="col-md-8">
+    <div class="card shadow-sm">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-list-ul me-2"></i>Active Schedules ({{ schedules|length }})
+      </div>
+      <div class="card-body p-0">
+        {% if schedules %}
+        <div class="table-responsive">
+          <table class="table table-hover mb-0 align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Patient</th>
+                <th>Medication</th>
+                <th>Time</th>
+                <th>Days</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for s in schedules %}
+              <tr class="{{ '' if s.active else 'table-secondary opacity-75' }}">
+                <td class="fw-semibold">{{ s.patient_name }}</td>
+                <td>
+                  {{ s.medication_name }}
+                  {% if s.dosage %}<br><small class="text-muted">{{ s.dosage }}</small>{% endif %}
+                </td>
+                <td>
+                  <span class="badge bg-primary fs-6">{{ s.reminder_time }}</span>
+                </td>
+                <td>
+                  <small class="text-muted">
+                    {{ s.days_of_week | replace('["','') | replace('"]','') | replace('","',' ') }}
+                  </small>
+                </td>
+                <td>
+                  {% if s.active %}
+                  <span class="badge bg-success">Active</span>
+                  {% else %}
+                  <span class="badge bg-secondary">Paused</span>
+                  {% endif %}
+                </td>
+                <td class="d-flex gap-1">
+                  <form method="POST" class="d-inline">
+                    <input type="hidden" name="action" value="toggle" />
+                    <input type="hidden" name="schedule_id" value="{{ s.id }}" />
+                    <button type="submit" class="btn btn-sm btn-outline-secondary" title="Toggle">
+                      <i class="bi bi-pause-circle"></i>
+                    </button>
+                  </form>
+                  <form method="POST" class="d-inline" onsubmit="return confirm('Delete this schedule?')">
+                    <input type="hidden" name="action" value="delete" />
+                    <input type="hidden" name="schedule_id" value="{{ s.id }}" />
+                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-center text-muted">
+          No schedules created yet. Add patients and medications first, then create a schedule.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="alert alert-info mt-3">
+      <i class="bi bi-info-circle me-2"></i>
+      The scheduler checks every minute and automatically creates a reminder for each matching
+      schedule. Reminders older than 4 hours without confirmation are marked <em>missed</em>.
+    </div>
+  </div>
+</div>
+{% endblock %}

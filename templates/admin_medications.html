@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Medications{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2 class="mb-0"><i class="bi bi-capsule-pill me-2 text-primary"></i>Medications</h2>
+</div>
+
+<div class="row g-4">
+  <!-- Add Medication -->
+  <div class="col-md-4">
+    <div class="card shadow-sm">
+      <div class="card-header fw-semibold bg-info text-white">
+        <i class="bi bi-capsule me-2"></i>Add Medication
+      </div>
+      <div class="card-body">
+        <form method="POST">
+          <input type="hidden" name="action" value="add" />
+          <div class="mb-3">
+            <label class="form-label">Medication Name <span class="text-danger">*</span></label>
+            <input type="text" name="name" class="form-control" placeholder="e.g. Metformin" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Dosage</label>
+            <input type="text" name="dosage" class="form-control" placeholder="e.g. 500mg" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Instructions</label>
+            <textarea name="instructions" class="form-control" rows="2"
+                      placeholder="e.g. Take with food"></textarea>
+          </div>
+          <button type="submit" class="btn btn-info text-white w-100">
+            <i class="bi bi-plus-circle me-1"></i>Add Medication
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Medication List -->
+  <div class="col-md-8">
+    <div class="card shadow-sm">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-list-ul me-2"></i>Medication List ({{ medications|length }})
+      </div>
+      <div class="card-body p-0">
+        {% if medications %}
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Name</th>
+                <th>Dosage</th>
+                <th>Instructions</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for m in medications %}
+              <tr>
+                <td class="fw-semibold">{{ m.name }}</td>
+                <td>{{ m.dosage or '—' }}</td>
+                <td class="text-muted small">{{ m.instructions or '—' }}</td>
+                <td>
+                  <form method="POST" onsubmit="return confirm('Remove {{ m.name }}?')">
+                    <input type="hidden" name="action" value="delete" />
+                    <input type="hidden" name="medication_id" value="{{ m.id }}" />
+                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-center text-muted">No medications added yet.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

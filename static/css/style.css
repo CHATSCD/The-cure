@@ -1,0 +1,95 @@
+:root {
+  --tc-primary: #0d6efd;
+  --tc-success: #198754;
+  --tc-warning: #ffc107;
+}
+
+body {
+  background-color: #f5f7fb;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* Reminder card pulse animation */
+.reminder-card {
+  animation: pulse-border 2s infinite;
+  border-width: 2px !important;
+}
+
+@keyframes pulse-border {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.4); }
+  50%       { box-shadow: 0 0 0 8px rgba(255, 193, 7, 0); }
+}
+
+.reminder-icon {
+  animation: ring 2s ease-in-out infinite;
+  display: inline-block;
+}
+
+@keyframes ring {
+  0%,100% { transform: rotate(0deg); }
+  10%      { transform: rotate(-15deg); }
+  20%      { transform: rotate(15deg); }
+  30%      { transform: rotate(-10deg); }
+  40%      { transform: rotate(10deg); }
+  50%      { transform: rotate(0deg); }
+}
+
+/* Navbar */
+.navbar-brand {
+  font-size: 1.3rem;
+  letter-spacing: 0.5px;
+}
+
+/* Card improvements */
+.card {
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,.06);
+}
+
+.card-header {
+  border-radius: 12px 12px 0 0 !important;
+  border-bottom: 1px solid rgba(0,0,0,.06);
+}
+
+/* Stat cards */
+.card h2.fw-bold {
+  font-size: 2.5rem;
+}
+
+/* Table striping */
+.table > thead {
+  font-size: 0.875rem;
+  letter-spacing: 0.3px;
+}
+
+/* Badge improvements */
+.badge.fs-6 {
+  font-size: 0.95rem !important;
+}
+
+/* Modal */
+.modal-content {
+  border-radius: 16px;
+  border: none;
+}
+
+.modal-header {
+  border-radius: 16px 16px 0 0;
+}
+
+/* Form controls */
+.form-control-lg, .form-select-lg {
+  border-radius: 8px;
+}
+
+/* Footer */
+footer {
+  margin-top: 2rem;
+  color: #6c757d;
+}
+
+/* Responsive adjustments */
+@media (max-width: 576px) {
+  .card h2.fw-bold { font-size: 1.8rem; }
+  main.container { padding: 1rem; }
+}
