@@ -4,6 +4,7 @@ import sqlite3
 import atexit
 import functools
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from flask import (
     Flask, render_template, request, redirect,
     url_for, session, jsonify, flash
@@ -15,6 +16,24 @@ app.secret_key = os.environ.get("SECRET_KEY", "change-me-in-production-abc123")
 @app.context_processor
 def inject_now():
     return {"now": datetime.now}
+
+# ── Timezone helpers (all schedule times stored as UTC, displayed as Central) ─
+_CENTRAL = ZoneInfo("America/Chicago")
+_UTC     = ZoneInfo("UTC")
+
+def central_to_utc(hhmm: str) -> str:
+    """'23:00' Central → '04:00' UTC (handles DST automatically)."""
+    h, m = int(hhmm[:2]), int(hhmm[3:])
+    today = datetime.now(_CENTRAL).date()
+    ct = datetime(today.year, today.month, today.day, h, m, tzinfo=_CENTRAL)
+    return ct.astimezone(_UTC).strftime("%H:%M")
+
+def utc_to_central(hhmm: str) -> str:
+    """'04:00' UTC → '23:00' Central (handles DST automatically)."""
+    h, m = int(hhmm[:2]), int(hhmm[3:])
+    today = datetime.now(_UTC).date()
+    ut = datetime(today.year, today.month, today.day, h, m, tzinfo=_UTC)
+    return ut.astimezone(_CENTRAL).strftime("%H:%M")
 
 # ── Admin credentials ────────────────────────────────────────────────────────
 ADMIN_USERNAME = "admin"
@@ -642,7 +661,8 @@ def admin_schedules():
             if action == "add":
                 patient_id    = request.form.get("patient_id")
                 medication_id = request.form.get("medication_id")
-                reminder_time = request.form.get("reminder_time")
+                reminder_time_ct = request.form.get("reminder_time")  # entered as Central
+                reminder_time    = central_to_utc(reminder_time_ct)   # stored as UTC
                 days = request.form.getlist("days") or ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
                 db.execute(
                     f"""INSERT INTO {T_SCHEDULES}
@@ -660,13 +680,19 @@ def admin_schedules():
                 db.execute(f"UPDATE {T_SCHEDULES} SET active = NOT active WHERE id = %s", (sid,))
 
     db          = get_db()
-    schedules   = db.execute(
+    schedules_raw = db.execute(
         f"""SELECT s.*, p.name as patient_name, m.name as medication_name, m.dosage
             FROM {T_SCHEDULES} s
             JOIN {T_PATIENTS}    p ON s.patient_id    = p.id
             JOIN {T_MEDICATIONS} m ON s.medication_id = m.id
             ORDER BY p.name, s.reminder_time"""
     ).fetchall()
+    # Convert stored UTC times to Central for display
+    schedules = []
+    for row in schedules_raw:
+        r = dict(row)
+        r["reminder_time_ct"] = utc_to_central(r["reminder_time"])
+        schedules.append(r)
     patients    = db.execute(f"SELECT * FROM {T_PATIENTS} ORDER BY name").fetchall()
     medications = db.execute(f"SELECT * FROM {T_MEDICATIONS} ORDER BY name").fetchall()
     db.close()
