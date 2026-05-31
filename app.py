@@ -207,6 +207,42 @@ def init_db():
 init_db()
 
 
+def seed_default_data():
+    """Ensure the hardwired patient and medication always exist."""
+    try:
+        with get_db() as db:
+            patient = db.execute(
+                f"SELECT id FROM {T_PATIENTS} WHERE name = %s",
+                ("Christopher Jordan Dubuisson",),
+            ).fetchone()
+            if not patient:
+                db.execute(
+                    f"INSERT INTO {T_PATIENTS} (name, phone) VALUES (%s, %s)",
+                    ("Christopher Jordan Dubuisson", "+12287601248"),
+                )
+            else:
+                db.execute(
+                    f"UPDATE {T_PATIENTS} SET phone = %s "
+                    f"WHERE name = %s AND (phone IS NULL OR phone = '')",
+                    ("+12287601248", "Christopher Jordan Dubuisson"),
+                )
+
+            med = db.execute(
+                f"SELECT id FROM {T_MEDICATIONS} WHERE name = %s",
+                ("Biktarvy",),
+            ).fetchone()
+            if not med:
+                db.execute(
+                    f"INSERT INTO {T_MEDICATIONS} (name, dosage) VALUES (%s, %s)",
+                    ("Biktarvy", "200/50/50mg"),
+                )
+    except Exception as e:
+        app.logger.error(f"seed_default_data error: {e}")
+
+
+seed_default_data()
+
+
 # ── Notification helpers ──────────────────────────────────────────────────────
 
 def send_sms(to_phone, patient_id, med_name, dosage=""):
