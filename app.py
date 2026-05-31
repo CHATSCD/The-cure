@@ -90,10 +90,21 @@ class _DBContext:
 
     def execute(self, sql, params=()):
         if self._pg:
+            import psycopg2.extras
+            # Wrap any Python list/dict as Json so psycopg2 sends proper JSONB
+            adapted = tuple(
+                psycopg2.extras.Json(p) if isinstance(p, (dict, list)) else p
+                for p in params
+            )
             cur = self._conn.cursor()
-            cur.execute(sql, params)
+            cur.execute(sql, adapted)
             return cur
-        return self._conn.execute(sql.replace("%s", "?"), params)
+        # SQLite: convert %s → ? and serialise list/dict to JSON strings
+        adapted = tuple(
+            json.dumps(p) if isinstance(p, (dict, list)) else p
+            for p in params
+        )
+        return self._conn.execute(sql.replace("%s", "?"), adapted)
 
     def executescript(self, sql):
         if not self._pg:
@@ -581,7 +592,7 @@ def admin_schedules():
                     f"""INSERT INTO {T_SCHEDULES}
                         (patient_id, medication_id, reminder_time, days_of_week)
                         VALUES (%s, %s, %s, %s)""",
-                    (patient_id, medication_id, reminder_time, json.dumps(days)),
+                    (patient_id, medication_id, reminder_time, days),
                 )
                 flash("Schedule created.", "success")
             elif action == "delete":
