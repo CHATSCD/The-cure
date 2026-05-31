@@ -80,7 +80,10 @@ class _DBContext:
     def __init__(self):
         if USE_POSTGRES:
             import psycopg2, psycopg2.extras
-            self._conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+            dsn = DATABASE_URL
+            if "sslmode" not in dsn:
+                dsn += ("&" if "?" in dsn else "?") + "sslmode=require"
+            self._conn = psycopg2.connect(dsn, cursor_factory=psycopg2.extras.RealDictCursor)
             self._pg = True
         else:
             self._conn = sqlite3.connect(SQLITE_PATH)
@@ -742,6 +745,21 @@ def api_today_reminders():
     ).fetchall()
     db.close()
     return jsonify([dict(r) for r in rows])
+
+
+@app.route("/admin/db-test")
+@login_required
+def admin_db_test():
+    info = {"backend": "postgres" if USE_POSTGRES else "sqlite", "url_set": bool(DATABASE_URL)}
+    try:
+        with get_db() as db:
+            count = db.execute(f"SELECT COUNT(*) FROM {T_PATIENTS}").fetchone()[0]
+            info["status"] = "ok"
+            info["patient_count"] = count
+    except Exception as e:
+        info["status"] = "error"
+        info["error"] = str(e)
+    return jsonify(info)
 
 
 if __name__ == "__main__":
