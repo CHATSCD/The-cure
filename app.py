@@ -21,24 +21,44 @@ ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "TheCure@2024"
 # ────────────────────────────────────────────────────────────────────────────
 
-IS_VERCEL    = bool(os.environ.get("VERCEL"))
-DATABASE_URL = os.environ.get("DATABASE_URL")
-USE_POSTGRES = bool(DATABASE_URL)
-
-APP_URL      = os.environ.get("APP_URL", "https://the-cure.vercel.app")
-
-SQLITE_PATH  = "/tmp/medication_tracker.db" if IS_VERCEL else os.path.join(
+IS_VERCEL   = bool(os.environ.get("VERCEL"))
+APP_URL     = os.environ.get("APP_URL", "https://the-cure.vercel.app")
+SQLITE_PATH = "/tmp/medication_tracker.db" if IS_VERCEL else os.path.join(
     os.path.dirname(__file__), "medication_tracker.db"
 )
+
+# ── Test Postgres connectivity at startup; fall back to SQLite if it fails ────
+_RAW_DB_URL = os.environ.get("DATABASE_URL", "")
+
+def _build_dsn(raw):
+    dsn = raw
+    if dsn and "sslmode" not in dsn:
+        dsn += ("&" if "?" in dsn else "?") + "sslmode=require"
+    return dsn
+
+DATABASE_URL  = None
+USE_POSTGRES  = False
+
+if _RAW_DB_URL:
+    _dsn = _build_dsn(_RAW_DB_URL)
+    try:
+        import psycopg2 as _pg
+        _c = _pg.connect(_dsn)
+        _c.close()
+        DATABASE_URL = _dsn
+        USE_POSTGRES = True
+        print("DB_CONNECT: postgres ok", flush=True)
+    except Exception as _pg_err:
+        print(f"DB_CONNECT_FAILED: {_pg_err}", flush=True)
+        print("DB_CONNECT: falling back to SQLite", flush=True)
 
 # ── Twilio SMS ────────────────────────────────────────────────────────────────
 TWILIO_SID   = os.environ.get("TWILIO_ACCOUNT_SID")
 TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
-TWILIO_FROM  = os.environ.get("TWILIO_PHONE_NUMBER")   # e.g. +15005550006
+TWILIO_FROM  = os.environ.get("TWILIO_PHONE_NUMBER")
 SMS_ENABLED  = all([TWILIO_SID, TWILIO_TOKEN, TWILIO_FROM])
 
 # ── Web Push VAPID ────────────────────────────────────────────────────────────
-# Override these env vars in Vercel with your own generated keys.
 VAPID_PRIVATE_KEY = os.environ.get(
     "VAPID_PRIVATE_KEY",
     "-----BEGIN PRIVATE KEY-----\n"
@@ -51,9 +71,9 @@ VAPID_PUBLIC_KEY = os.environ.get(
     "VAPID_PUBLIC_KEY",
     "BGOrQkVrRoidLV2sL1-HpVWG_2A1ksL1mw7RK8f56hP7pI50T7jjxoA9XX8F0Hl5Rk7BCfP-zz-hMbO5jaKbZw0",
 )
-VAPID_CLAIMS = {"sub": f"mailto:admin@the-cure.app"}
+VAPID_CLAIMS = {"sub": "mailto:admin@the-cure.app"}
 
-# ── Table names ───────────────────────────────────────────────────────────────
+# ── Table names (set after connectivity test) ─────────────────────────────────
 if USE_POSTGRES:
     T_PATIENTS    = "med_patients"
     T_MEDICATIONS = "med_medications"
@@ -80,10 +100,7 @@ class _DBContext:
     def __init__(self):
         if USE_POSTGRES:
             import psycopg2, psycopg2.extras
-            dsn = DATABASE_URL
-            if "sslmode" not in dsn:
-                dsn += ("&" if "?" in dsn else "?") + "sslmode=require"
-            self._conn = psycopg2.connect(dsn, cursor_factory=psycopg2.extras.RealDictCursor)
+            self._conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
             self._pg = True
         else:
             self._conn = sqlite3.connect(SQLITE_PATH)
